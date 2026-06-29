@@ -12,13 +12,9 @@ import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 
 public class SpeedMod implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("speedmod");
@@ -28,7 +24,7 @@ public class SpeedMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("SpeedMod loaded (Rounded GUI with shader). Press Right Shift.");
+        LOGGER.info("SpeedMod loaded. Press Right Shift to open rounded GUI (shader).");
 
         new Thread(() -> {
             while (true) {
@@ -57,12 +53,12 @@ public class SpeedMod implements ModInitializer {
         }).start();
     }
 
-    // ==================== ЭКРАН С ШЕЙДЕРОМ ====================
+    // ==================== ЭКРАН С ЗАКРУГЛЁННЫМИ УГЛАМИ (ШЕЙДЕР) ====================
     public static class RoundedShaderScreen extends Screen {
         private static final int PANEL_WIDTH = 400;
         private static final int PANEL_HEIGHT = 400;
         private static final int RADIUS = 20;
-        private static final int BG_COLOR = 0xCC1A1A1A; // полупрозрачный чёрный
+        private static final int BG_COLOR = 0xCC1A1A1A;
 
         private GlShader roundedShader;
 
@@ -73,19 +69,21 @@ public class SpeedMod implements ModInitializer {
         @Override
         protected void init() {
             super.init();
-            // Компилируем шейдер при инициализации
             try {
-                roundedShader = new GlShader(null, getFragmentShaderSource(), VertexFormats.POSITION);
+                // Компилируем шейдер из строки
+                String vertexSource = loadVertexShader();
+                String fragmentSource = loadFragmentShader();
+                roundedShader = new GlShader(vertexSource, fragmentSource, VertexFormats.POSITION);
                 LOGGER.info("Rounded shader compiled successfully");
             } catch (Exception e) {
-                LOGGER.error("Failed to compile shader, falling back to software rendering", e);
+                LOGGER.error("Shader compilation failed, using fallback", e);
                 roundedShader = null;
             }
         }
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            // Затемняем фон (показываем игру под ним)
+            // Затемнение фона (видно игру)
             context.fill(0, 0, this.width, this.height, 0x88000000);
 
             int x = (this.width - PANEL_WIDTH) / 2;
@@ -97,22 +95,22 @@ public class SpeedMod implements ModInitializer {
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
 
-                // Передаём параметры шейдера
+                // Передаём uniform-параметры
                 float w = PANEL_WIDTH;
                 float h = PANEL_HEIGHT;
                 float r = RADIUS;
-                float colorAlpha = (BG_COLOR >> 24 & 0xFF) / 255f;
-                float colorR = ((BG_COLOR >> 16) & 0xFF) / 255f;
-                float colorG = ((BG_COLOR >> 8) & 0xFF) / 255f;
-                float colorB = (BG_COLOR & 0xFF) / 255f;
+                float alpha = (BG_COLOR >> 24 & 0xFF) / 255f;
+                float red   = ((BG_COLOR >> 16) & 0xFF) / 255f;
+                float green = ((BG_COLOR >> 8)  & 0xFF) / 255f;
+                float blue  = (BG_COLOR & 0xFF) / 255f;
 
                 roundedShader.addUniform("uResolution", (float) this.width, (float) this.height);
                 roundedShader.addUniform("uRectPos", (float) x, (float) y);
                 roundedShader.addUniform("uRectSize", w, h);
                 roundedShader.addUniform("uRadius", r);
-                roundedShader.addUniform("uColor", colorR, colorG, colorB, colorAlpha);
+                roundedShader.addUniform("uColor", red, green, blue, alpha);
 
-                // Рисуем прямоугольник (4 вершины)
+                // Рисуем прямоугольник
                 Tessellator tessellator = RenderSystem.renderThreadTessellator();
                 BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION);
                 buffer.vertex(x, y, 0).next();
@@ -124,17 +122,28 @@ public class SpeedMod implements ModInitializer {
 
                 RenderSystem.disableBlend();
             } else {
-                // ---- Fallback: пиксельная отрисовка (если шейдер не скомпилировался) ----
-                drawRoundedRectSoftware(context, x, y, PANEL_WIDTH, PANEL_HEIGHT, RADIUS, BG_COLOR);
+                // ---- Fallback (пиксельная отрисовка) ----
+                drawRoundedRectFallback(context, x, y, PANEL_WIDTH, PANEL_HEIGHT, RADIUS, BG_COLOR);
             }
 
-            // Текст (поверх)
+            // Текст поверх
             context.drawText(mc.textRenderer, "§lCustom GUI (Shader)", x + 15, y + 15, 0xFFFFFF, false);
+            context.drawText(mc.textRenderer, "§7Smooth rounded corners", x + 15, y + 35, 0xAAAAAA, false);
         }
 
-        // === Фрагментный шейдер (GLSL) ===
-        private String getFragmentShaderSource() {
-            return "#version 330 core\n" +
+        // === Шейдеры (встроены в код) ===
+        private String loadVertexShader() {
+            return "#version 150\n" +
+                    "in vec3 Position;\n" +
+                    "uniform mat4 ModelViewMat;\n" +
+                    "uniform mat4 ProjMat;\n" +
+                    "void main() {\n" +
+                    "    gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);\n" +
+                    "}\n";
+        }
+
+        private String loadFragmentShader() {
+            return "#version 150\n" +
                     "in vec2 fragCoord;\n" +
                     "uniform vec2 uResolution;\n" +
                     "uniform vec2 uRectPos;\n" +
@@ -157,11 +166,9 @@ public class SpeedMod implements ModInitializer {
         }
 
         // === Fallback (без шейдера) ===
-        private void drawRoundedRectSoftware(DrawContext context, int x, int y, int w, int h, int r, int color) {
-            // Основной прямоугольник
+        private void drawRoundedRectFallback(DrawContext context, int x, int y, int w, int h, int r, int color) {
             context.fill(x + r, y, x + w - r, y + h, color);
             context.fill(x, y + r, x + w, y + h - r, color);
-            // Четыре угла (четверти круга)
             drawQuarterCircle(context, x + r, y + r, r, color, 0);
             drawQuarterCircle(context, x + w - r, y + r, r, color, 1);
             drawQuarterCircle(context, x + r, y + h - r, r, color, 2);
@@ -190,7 +197,7 @@ public class SpeedMod implements ModInitializer {
         public void removed() {
             super.removed();
             if (roundedShader != null) {
-                roundedShader.close(); // освобождаем ресурсы шейдера
+                roundedShader.close(); // освобождаем ресурсы
             }
         }
 
