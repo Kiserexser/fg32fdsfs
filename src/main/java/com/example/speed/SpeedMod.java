@@ -27,6 +27,11 @@ public class SpeedMod implements ModInitializer {
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Random random = new Random();
 
+    // === Поля для состояния клавиш (чтобы использовать в lambda) ===
+    private boolean lastR = false;
+    private boolean lastZ = false;
+    private boolean lastShift = false;
+
     // === Модули (абстракция) ===
     public static abstract class Module {
         private final String name;
@@ -57,9 +62,7 @@ public class SpeedMod implements ModInitializer {
         }
 
         public abstract void onEnable();
-
         public abstract void onDisable();
-
         public abstract void onTick();
     }
 
@@ -93,7 +96,6 @@ public class SpeedMod implements ModInitializer {
             // Падение
             if (motionY < -0.5 && !mc.player.isOnGround()) {
                 fallTicks++;
-                // Отправляем пакет позиции с небольшим смещением вверх
                 if (fallTicks % 3 == 0) {
                     double offsetY = 0.05 + (random.nextDouble() - 0.5) * 0.02;
                     double newY = currentY + offsetY;
@@ -119,7 +121,7 @@ public class SpeedMod implements ModInitializer {
                 }
             }
 
-            // Сброс fallDistance всегда
+            // Сброс fallDistance
             if (mc.player.fallDistance > 1.0f) {
                 mc.player.fallDistance = 0;
             }
@@ -134,7 +136,6 @@ public class SpeedMod implements ModInitializer {
         private long shiftCycleStart = System.currentTimeMillis();
         private boolean isShiftPhase = true;
 
-        // Настройки
         private static final double SEARCH_RANGE = 5.0;
         private static final double ATTACK_RANGE = 3.0;
         private static final double FIXED_DELAY = 0.625;
@@ -165,7 +166,7 @@ public class SpeedMod implements ModInitializer {
             if (mc.player == null || mc.world == null || !isEnabled()) return;
             long now = System.currentTimeMillis();
 
-            // Shift cycle (смещение фазы)
+            // Shift cycle
             long elapsed = now - shiftCycleStart;
             if (isShiftPhase && elapsed >= SHIFT_DURATION_MS) {
                 isShiftPhase = false;
@@ -193,7 +194,7 @@ public class SpeedMod implements ModInitializer {
                 return;
             }
 
-            // Вычисление углов с джиттером и смещением
+            // Углы с джиттером и смещением
             Vec3d eyePos = mc.player.getEyePos();
             double heightOffset = (random.nextDouble() - 0.5) * 0.2;
             Vec3d targetPos = target.getPos().add(0, target.getHeight() * (0.5 + heightOffset), 0);
@@ -258,9 +259,6 @@ public class SpeedMod implements ModInitializer {
         private static final int BUTTON_COLOR = 0xCC333333;
         private static final int BUTTON_HOVER = 0xCC555555;
         private static final int TEXT_COLOR = 0xFFFFFFFF;
-        private static final int ENABLED_COLOR = 0xFF00FF00;
-        private static final int DISABLED_COLOR = 0xFFFF0000;
-        private static final int RADIUS = 10;
 
         public ClickGuiScreen() {
             super(Text.literal("ClickGUI"));
@@ -268,7 +266,6 @@ public class SpeedMod implements ModInitializer {
 
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            // Затемнение фона
             context.fill(0, 0, this.width, this.height, 0x88000000);
 
             int totalHeight = modules.size() * 30 + 30;
@@ -276,10 +273,7 @@ public class SpeedMod implements ModInitializer {
             int y = (this.height - totalHeight) / 2;
             int width = 200;
 
-            // Панель
             context.fill(x, y, x + width, y + totalHeight, BG_COLOR);
-
-            // Заголовок
             context.drawText(mc.textRenderer, "§lModules", x + 10, y + 10, 0xFFFFFF, false);
 
             int buttonY = y + 30;
@@ -295,13 +289,10 @@ public class SpeedMod implements ModInitializer {
                 context.fill(buttonX, buttonY, buttonX + buttonWidth, buttonY + buttonHeight, color);
 
                 String status = m.isEnabled() ? "§aON" : "§cOFF";
-                String text = m.getName() + " " + status;
-                context.drawText(mc.textRenderer, text, buttonX + 5, buttonY + 6, TEXT_COLOR, false);
+                context.drawText(mc.textRenderer, m.getName() + " " + status, buttonX + 5, buttonY + 6, TEXT_COLOR, false);
 
                 buttonY += buttonHeight + 4;
             }
-
-            super.render(context, mouseX, mouseY, delta);
         }
 
         @Override
@@ -350,24 +341,18 @@ public class SpeedMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("SpeedMod loaded. R - KillAura, Z - NoFall, Right Shift - GUI");
 
-        // Регистрация модулей
         modules.add(new NoFallModule());
         modules.add(new KillAuraModule());
 
-        // Поток для обработки клавиш и тиков
         new Thread(() -> {
-            boolean lastR = false, lastZ = false, lastShift = false;
             while (true) {
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ignored) {}
+                try { Thread.sleep(10); } catch (InterruptedException ignored) {}
 
                 mc.execute(() -> {
                     try {
                         if (mc.getWindow() == null || mc.player == null || mc.world == null) return;
                         long window = mc.getWindow().getHandle();
 
-                        // === Клавиша R (KillAura) ===
                         boolean rPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_R) == GLFW.GLFW_PRESS;
                         if (rPressed && !lastR) {
                             Module ka = getModule("KillAura");
@@ -378,7 +363,6 @@ public class SpeedMod implements ModInitializer {
                         }
                         lastR = rPressed;
 
-                        // === Клавиша Z (NoFall) ===
                         boolean zPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_Z) == GLFW.GLFW_PRESS;
                         if (zPressed && !lastZ) {
                             Module nf = getModule("NoFall");
@@ -389,7 +373,6 @@ public class SpeedMod implements ModInitializer {
                         }
                         lastZ = zPressed;
 
-                        // === Клавиша Right Shift (GUI) ===
                         boolean shiftPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
                         if (shiftPressed && !lastShift) {
                             if (mc.currentScreen instanceof ClickGuiScreen) {
@@ -400,7 +383,6 @@ public class SpeedMod implements ModInitializer {
                         }
                         lastShift = shiftPressed;
 
-                        // === Tick модулей ===
                         for (Module m : modules) {
                             m.onTick();
                         }
