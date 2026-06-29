@@ -1,0 +1,26 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Setup Gradle 8.8
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.8'
+      - name: Generate sources and build
+        run: gradle genSources build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: speed-mod
+          path: build/libs/*.jar
