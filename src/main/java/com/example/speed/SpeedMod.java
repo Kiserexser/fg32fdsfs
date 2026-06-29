@@ -4,6 +4,8 @@ import net.fabricmc.api.ModInitializer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -25,11 +27,10 @@ public class SpeedMod implements ModInitializer {
     private long lastAttackTime = 0;
 
     // === НАСТРОЙКИ ===
-    private static final double SEARCH_RANGE = 5.0;       // поиск на 5 блоков
-    private static final double ATTACK_RANGE = 3.0;       // атака на 3 блока
-    private static final double MIN_DELAY = 0.625;
-    private static final double MAX_DELAY = 0.630;
-    private static final float SMOOTH_SPEED = 0.16f;      // плавность 0.16
+    private static final double SEARCH_RANGE = 5.0;
+    private static final double ATTACK_RANGE = 3.0;
+    private static final double FIXED_DELAY = 0.625;        // фиксированная задержка (без рандома)
+    private static final float SMOOTH_SPEED = 0.20f;        // быстрее ротация
     private static final boolean SPRINT_RESET = true;
 
     // === Смещение ===
@@ -49,7 +50,7 @@ public class SpeedMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("KillAura (search 5, attack 3, smooth 0.16) loaded. Press R to toggle.");
+        LOGGER.info("KillAura (fixed delay 0.625, smooth 0.20) loaded. Press R to toggle.");
 
         new Thread(() -> {
             while (true) {
@@ -72,6 +73,8 @@ public class SpeedMod implements ModInitializer {
                         if (!enabled) return;
 
                         long now = System.currentTimeMillis();
+
+                        // Обновление фазы смещения
                         long elapsed = now - shiftCycleStart;
                         if (isShiftPhase && elapsed >= SHIFT_DURATION_MS) {
                             isShiftPhase = false;
@@ -81,6 +84,7 @@ public class SpeedMod implements ModInitializer {
                             shiftCycleStart = now;
                         }
 
+                        // Поиск цели
                         LivingEntity target = null;
                         if (lockedTarget != null && lockedTarget.isAlive() && !lockedTarget.isDead()) {
                             double dist = mc.player.distanceTo(lockedTarget);
@@ -97,7 +101,7 @@ public class SpeedMod implements ModInitializer {
                         if (target == null) return;
 
                         double dist = mc.player.distanceTo(target);
-                        if (dist > SEARCH_RANGE) {
+                        if (dist > SEARCH_RANGE || dist < 0.5) {
                             lockedTarget = null;
                             return;
                         }
@@ -134,17 +138,18 @@ public class SpeedMod implements ModInitializer {
                         mc.player.setYaw(newYaw);
                         mc.player.setPitch(newPitch);
 
-                        // ---- Атака (без raycast) ----
-                        long now2 = System.currentTimeMillis();
-                        double delay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * random.nextDouble();
+                        // ---- Проверка raycast (улучшенная) ----
+                        HitResult hit = mc.player.raycast(ATTACK_RANGE, 1.0f, false);
+                        boolean canHit = hit instanceof EntityHitResult && ((EntityHitResult) hit).getEntity() == target;
 
-                        if (now2 - lastAttackTime >= (long)(delay * 1000) && target.isAlive() && dist <= ATTACK_RANGE) {
+                        // ---- Атака (только если цель видна и прошла задержка) ----
+                        if (canHit && now - lastAttackTime >= (long)(FIXED_DELAY * 1000) && target.isAlive() && dist <= ATTACK_RANGE) {
                             if (SPRINT_RESET && mc.player.isSprinting()) {
                                 mc.player.setSprinting(false);
                             }
                             mc.interactionManager.attackEntity(mc.player, target);
                             mc.player.swingHand(mc.player.getActiveHand());
-                            lastAttackTime = now2;
+                            lastAttackTime = now;
                         }
 
                     } catch (Exception e) {
