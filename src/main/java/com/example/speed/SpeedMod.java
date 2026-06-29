@@ -139,7 +139,7 @@ public class SpeedMod implements ModInitializer {
                 && !mc.player.isRiding();
     }
 
-    // ============== Вложенный класс FunTimeRotation ==============
+    // ============== РОТАЦИЯ (ПЛАВНАЯ) ==============
     public static class FunTimeRotation {
         public static float[] compute(float currentYaw, float currentPitch,
                                       float targetYaw, float targetPitch,
@@ -153,8 +153,11 @@ public class SpeedMod implements ModInitializer {
                 return new float[]{currentYaw, currentPitch};
             }
 
-            float maxStepYaw = (Math.abs(deltaYaw) / total) * 130f;
-            float maxStepPitch = (Math.abs(deltaPitch) / total) * 130f;
+            // Медленная скорость поворота: 60° в секунду → ~3° за тик
+            final float MAX_DEGREES_PER_SECOND = 60f;
+            float maxStep = MAX_DEGREES_PER_SECOND * 0.05f;
+            float maxStepYaw = Math.min(maxStep, (Math.abs(deltaYaw) / total) * maxStep * 2);
+            float maxStepPitch = Math.min(maxStep, (Math.abs(deltaPitch) / total) * maxStep * 2);
 
             float stepYaw = clamp(deltaYaw, -maxStepYaw, maxStepYaw);
             float stepPitch = clamp(deltaPitch, -maxStepPitch, maxStepPitch);
@@ -162,27 +165,30 @@ public class SpeedMod implements ModInitializer {
             float nextYaw = currentYaw + stepYaw;
             float nextPitch = currentPitch + stepPitch;
 
-            if (canAttack) {
-                nextYaw = lerp(0.85f, currentYaw, nextYaw);
-                nextPitch = lerp(0.85f, currentPitch, nextPitch);
+            // Всегда применяем сглаживание (плавность)
+            float smoothFactor = 0.25f;
+            nextYaw = lerp(smoothFactor, currentYaw, nextYaw);
+            nextPitch = lerp(smoothFactor, currentPitch, nextPitch);
 
-                if (isNewHit && hitCounter % 86 == 0 && (nowMs - lastHitTime) < 250) {
-                    nextPitch = -90f;
-                }
-            } else {
+            // Флик вниз (каждый 86-й хит)
+            if (isNewHit && hitCounter % 86 == 0 && (nowMs - lastHitTime) < 250) {
+                nextPitch = -90f;
+            }
+
+            // Idle тряска (когда не атакуем)
+            if (!canAttack) {
                 long sinceLastHit = nowMs - lastHitTime;
                 if (sinceLastHit >= 535) {
-                    float shakeYaw = (18f + (float) Math.random() * 10f) * (float) Math.sin(nowMs / 60.0);
-                    float shakePitch = (6f + (float) Math.random() * 10f) * (float) Math.cos(nowMs / 60.0);
-                    nextYaw = clamp(currentYaw + shakeYaw, currentYaw - 45f, currentYaw + 45f);
-                    nextPitch = clamp(currentPitch + shakePitch, currentPitch - 45f, currentPitch + 45f);
+                    float shakeYaw = (6f + (float) Math.random() * 6f) * (float) Math.sin(nowMs / 60.0);
+                    float shakePitch = (3f + (float) Math.random() * 4f) * (float) Math.cos(nowMs / 60.0);
+                    nextYaw = clamp(currentYaw + shakeYaw, currentYaw - 20f, currentYaw + 20f);
+                    nextPitch = clamp(currentPitch + shakePitch, currentPitch - 20f, currentPitch + 20f);
                 } else {
+                    // Жёстко держим угол (0° доворота)
                     nextYaw = currentYaw;
                     nextPitch = currentPitch;
                 }
             }
-
-            nextPitch = clamp(nextPitch, -89f, 90f);
 
             // GCD Snap
             float sens = mc.options.getMouseSensitivity().getValue().floatValue();
@@ -208,7 +214,7 @@ public class SpeedMod implements ModInitializer {
         }
     }
 
-    // ============== GCD Util ==============
+    // ============== GCD SNAP ==============
     public static class GCDUtil {
         private static final float[] SENS_VALUES = {
                 0.0f, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f,
