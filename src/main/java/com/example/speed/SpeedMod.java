@@ -5,8 +5,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -14,12 +12,11 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
-public class KillAuraMod implements ModInitializer {
-    public static final Logger LOGGER = LoggerFactory.getLogger("killaura");
+public class SpeedMod implements ModInitializer {
+    public static final Logger LOGGER = LoggerFactory.getLogger("speedmod");
     private static final MinecraftClient mc = MinecraftClient.getInstance();
     private static final Random random = new Random();
 
@@ -29,7 +26,6 @@ public class KillAuraMod implements ModInitializer {
     private static int hitCounter = 0;
     private static boolean wasAttacking = false;
 
-    // Настройки
     private static final double SEARCH_RANGE = 5.0;
     private static final double ATTACK_RANGE = 3.5;
     private static final long COOLDOWN_MS = 535;
@@ -60,31 +56,22 @@ public class KillAuraMod implements ModInitializer {
 
                     if (!enabled) return;
 
-                    // ---- Поиск цели ----
                     PlayerEntity target = getTargetPlayer();
                     if (target == null) return;
 
                     double dist = mc.player.distanceTo(target);
                     if (dist > SEARCH_RANGE || dist < 1.0) return;
 
-                    // ---- Проверка на критический удар ----
                     boolean canCrit = isCritPossible();
-                    if (!canCrit) {
-                        // Если крит невозможен, не атакуем, но ротация всё равно работает
-                        // Можно поворачиваться, но не бить
-                    }
 
-                    // ---- Вычисляем идеальные углы ----
                     float[] idealAngles = getAnglesTo(target);
                     float idealYaw = idealAngles[0];
                     float idealPitch = idealAngles[1];
 
-                    // ---- Применяем ротацию через FunTimeRotation ----
                     float currentYaw = mc.player.getYaw();
                     float currentPitch = mc.player.getPitch();
                     long now = System.currentTimeMillis();
 
-                    // Детект атаки (rising edge)
                     boolean canAttack = canCrit && (now - lastHitTime >= COOLDOWN_MS) && dist <= ATTACK_RANGE;
                     boolean isNewHit = canAttack && !wasAttacking;
                     if (isNewHit) {
@@ -93,7 +80,6 @@ public class KillAuraMod implements ModInitializer {
                     }
                     wasAttacking = canAttack;
 
-                    // Вычисляем новые углы
                     float[] newAngles = FunTimeRotation.compute(
                             currentYaw, currentPitch,
                             idealYaw, idealPitch,
@@ -101,13 +87,10 @@ public class KillAuraMod implements ModInitializer {
                             hitCounter, lastHitTime, isNewHit
                     );
 
-                    // Применяем углы
                     mc.player.setYaw(newAngles[0]);
                     mc.player.setPitch(newAngles[1]);
 
-                    // ---- Атака (только криты) ----
                     if (canAttack && isNewHit) {
-                        // Сброс спринта для критического удара
                         if (mc.player.isSprinting()) {
                             mc.player.setSprinting(false);
                         }
@@ -122,7 +105,8 @@ public class KillAuraMod implements ModInitializer {
     private static PlayerEntity getTargetPlayer() {
         if (mc.player == null || mc.world == null) return null;
         Box box = mc.player.getBoundingBox().expand(SEARCH_RANGE);
-        List<PlayerEntity> players = mc.world.getPlayers();
+        // В Yarn 1.21.4 world.getPlayers() возвращает List<AbstractClientPlayerEntity>, но мы можем работать с PlayerEntity
+        List<? extends PlayerEntity> players = mc.world.getPlayers();
         PlayerEntity closest = null;
         double closestDist = Double.MAX_VALUE;
         for (PlayerEntity player : players) {
@@ -150,7 +134,6 @@ public class KillAuraMod implements ModInitializer {
 
     private static boolean isCritPossible() {
         if (mc.player == null) return false;
-        // Крит возможен, если игрок не на земле, не в воде, не на лестнице и т.д.
         return !mc.player.isOnGround()
                 && !mc.player.isTouchingWater()
                 && !mc.player.isClimbing()
@@ -181,11 +164,9 @@ public class KillAuraMod implements ModInitializer {
             float nextPitch = currentPitch + stepPitch;
 
             if (canAttack) {
-                // attack: сглаживание 0.85
                 nextYaw = lerp(0.85f, currentYaw, nextYaw);
                 nextPitch = lerp(0.85f, currentPitch, nextPitch);
 
-                // Флик вниз каждый 86-й хит в окне 250 мс
                 if (isNewHit && hitCounter % 86 == 0 && (nowMs - lastHitTime) < 250) {
                     nextPitch = -90f;
                 }
@@ -205,7 +186,7 @@ public class KillAuraMod implements ModInitializer {
             nextPitch = clamp(nextPitch, -89f, 90f);
 
             // GCD Snap
-            float sens = mc.options.sensitivity;
+            float sens = (float) mc.options.getMouseSensitivity();
             nextYaw = GCDUtil.gcdSnap(nextYaw, sens);
             nextPitch = GCDUtil.gcdSnap(nextPitch, sens);
 
@@ -240,13 +221,11 @@ public class KillAuraMod implements ModInitializer {
         };
 
         public static float gcdSnap(float angle, float sens) {
-            // Находим ближайший GCD
             float gcd = getGCD(sens);
             return Math.round(angle / gcd) * gcd;
         }
 
         private static float getGCD(float sens) {
-            // Простая интерполяция
             int index = (int) (sens * 10);
             if (index < 0) index = 0;
             if (index >= SENS_VALUES.length - 1) index = SENS_VALUES.length - 2;
