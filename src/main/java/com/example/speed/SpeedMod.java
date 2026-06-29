@@ -4,8 +4,6 @@ import net.fabricmc.api.ModInitializer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.text.Text;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -26,12 +24,12 @@ public class SpeedMod implements ModInitializer {
     private static boolean lastKeyState = false;
     private long lastAttackTime = 0;
 
-    // === НАСТРОЙКИ (задержка 0.625–0.630) ===
-    private static final double SEARCH_RANGE = 4.5;
-    private static final double ATTACK_RANGE = 3.5;
-    private static final double MIN_DELAY = 0.625;   // 625 мс
-    private static final double MAX_DELAY = 0.630;   // 630 мс
-    private static final float SMOOTH_SPEED = 0.20f;
+    // === НАСТРОЙКИ ===
+    private static final double SEARCH_RANGE = 5.0;       // поиск на 5 блоков
+    private static final double ATTACK_RANGE = 3.0;       // атака на 3 блока
+    private static final double MIN_DELAY = 0.625;
+    private static final double MAX_DELAY = 0.630;
+    private static final float SMOOTH_SPEED = 0.16f;      // плавность 0.16
     private static final boolean SPRINT_RESET = true;
 
     // === Смещение ===
@@ -51,7 +49,7 @@ public class SpeedMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("KillAura (delay 0.625-0.630s) loaded. Press R to toggle.");
+        LOGGER.info("KillAura (search 5, attack 3, smooth 0.16) loaded. Press R to toggle.");
 
         new Thread(() -> {
             while (true) {
@@ -73,7 +71,6 @@ public class SpeedMod implements ModInitializer {
 
                         if (!enabled) return;
 
-                        // Обновление фазы смещения
                         long now = System.currentTimeMillis();
                         long elapsed = now - shiftCycleStart;
                         if (isShiftPhase && elapsed >= SHIFT_DURATION_MS) {
@@ -84,7 +81,6 @@ public class SpeedMod implements ModInitializer {
                             shiftCycleStart = now;
                         }
 
-                        // Поиск цели
                         LivingEntity target = null;
                         if (lockedTarget != null && lockedTarget.isAlive() && !lockedTarget.isDead()) {
                             double dist = mc.player.distanceTo(lockedTarget);
@@ -106,13 +102,8 @@ public class SpeedMod implements ModInitializer {
                             return;
                         }
 
-                        // Проверка видимости (raycast)
-                        HitResult hit = mc.player.raycast(ATTACK_RANGE, 1.0f, false);
-                        boolean canHit = hit instanceof EntityHitResult && ((EntityHitResult) hit).getEntity() == target;
-
                         // ---- Ротация ----
                         Vec3d eyePos = mc.player.getEyePos();
-                        // Случайное смещение цели по Y (±0.1 блока)
                         double heightOffset = (random.nextDouble() - 0.5) * 0.2;
                         Vec3d targetPos = target.getPos().add(0, target.getHeight() * (0.5 + heightOffset), 0);
 
@@ -124,7 +115,6 @@ public class SpeedMod implements ModInitializer {
                         float yaw = (float) MathHelper.atan2(dz, dx) * (180F / (float) Math.PI) - 90F;
                         float pitch = (float) -MathHelper.atan2(dy, distance) * (180F / (float) Math.PI);
 
-                        // Джиттер
                         float jitterYaw = (random.nextFloat() - 0.5f) * JITTER_RANGE * 2;
                         float jitterPitch = (random.nextFloat() - 0.5f) * JITTER_RANGE * 2;
 
@@ -144,11 +134,11 @@ public class SpeedMod implements ModInitializer {
                         mc.player.setYaw(newYaw);
                         mc.player.setPitch(newPitch);
 
-                        // ---- Атака с задержкой 0.625–0.630 ----
+                        // ---- Атака (без raycast) ----
                         long now2 = System.currentTimeMillis();
                         double delay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * random.nextDouble();
 
-                        if (canHit && now2 - lastAttackTime >= (long)(delay * 1000) && target.isAlive() && dist <= ATTACK_RANGE) {
+                        if (now2 - lastAttackTime >= (long)(delay * 1000) && target.isAlive() && dist <= ATTACK_RANGE) {
                             if (SPRINT_RESET && mc.player.isSprinting()) {
                                 mc.player.setSprinting(false);
                             }
