@@ -30,8 +30,8 @@ public class SpeedMod implements ModInitializer {
 
     private static final double SEARCH_RANGE = 5.0;
     private static final double ATTACK_RANGE = 3.5;
-    private static final double MIN_DELAY = 0.600; // 600 мс
-    private static final double MAX_DELAY = 0.700; // 700 мс
+    private static final double MIN_DELAY = 0.600;
+    private static final double MAX_DELAY = 0.700;
 
     @Override
     public void onInitialize() {
@@ -94,12 +94,12 @@ public class SpeedMod implements ModInitializer {
                     mc.player.setPitch(newAngles[1]);
 
                     // Проверка попадания (raycast)
-                    HitResult hit = mc.player.raycast(ATTACK_RANGE, mc.getTickDelta(), false);
+                    HitResult hit = mc.player.raycast(ATTACK_RANGE, 1.0f, false);
                     if (!(hit instanceof EntityHitResult) || ((EntityHitResult) hit).getEntity() != target) {
-                        return; // цель не под прицелом — не атакуем
+                        return;
                     }
 
-                    // Атака с задержкой 600–700 мс
+                    // Атака с задержкой
                     double delay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * random.nextDouble();
                     if (now - lastHitTime >= (long)(delay * 1000) && dist <= ATTACK_RANGE) {
                         mc.interactionManager.attackEntity(mc.player, target);
@@ -140,7 +140,7 @@ public class SpeedMod implements ModInitializer {
         return new float[]{yaw, pitch};
     }
 
-    // ============== ПЛАВНАЯ РОТАЦИЯ (40° в секунду) ==============
+    // ============== РОТАЦИЯ ==============
     public static class FunTimeRotation {
         public static float[] compute(float currentYaw, float currentPitch,
                                       float targetYaw, float targetPitch,
