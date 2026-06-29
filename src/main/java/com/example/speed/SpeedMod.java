@@ -105,7 +105,6 @@ public class SpeedMod implements ModInitializer {
     private static PlayerEntity getTargetPlayer() {
         if (mc.player == null || mc.world == null) return null;
         Box box = mc.player.getBoundingBox().expand(SEARCH_RANGE);
-        // В Yarn 1.21.4 world.getPlayers() возвращает List<AbstractClientPlayerEntity>, но мы можем работать с PlayerEntity
         List<? extends PlayerEntity> players = mc.world.getPlayers();
         PlayerEntity closest = null;
         double closestDist = Double.MAX_VALUE;
@@ -186,7 +185,7 @@ public class SpeedMod implements ModInitializer {
             nextPitch = clamp(nextPitch, -89f, 90f);
 
             // GCD Snap
-            float sens = (float) mc.options.getMouseSensitivity();
+            float sens = mc.options.getMouseSensitivity().getValue().floatValue();
             nextYaw = GCDUtil.gcdSnap(nextYaw, sens);
             nextPitch = GCDUtil.gcdSnap(nextPitch, sens);
 
