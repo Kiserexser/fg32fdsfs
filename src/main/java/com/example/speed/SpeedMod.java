@@ -5,6 +5,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -28,11 +30,12 @@ public class SpeedMod implements ModInitializer {
 
     private static final double SEARCH_RANGE = 5.0;
     private static final double ATTACK_RANGE = 3.5;
-    private static final long COOLDOWN_MS = 535;
+    private static final double MIN_DELAY = 0.600; // 600 мс
+    private static final double MAX_DELAY = 0.700; // 700 мс
 
     @Override
     public void onInitialize() {
-        LOGGER.info("KillAura (360° rotation, only crits) loaded. Press R to toggle.");
+        LOGGER.info("KillAura (legit) loaded. Press R to toggle.");
 
         new Thread(() -> {
             while (true) {
@@ -62,8 +65,17 @@ public class SpeedMod implements ModInitializer {
                     double dist = mc.player.distanceTo(target);
                     if (dist > SEARCH_RANGE || dist < 1.0) return;
 
-                    boolean canCrit = isCritPossible();
+                    // Автопрыжок для крита
+                    if (mc.player.isOnGround()) {
+                        mc.player.jump();
+                    }
 
+                    // Легитный сброс спринта
+                    if (mc.player.isSprinting()) {
+                        mc.player.setSprinting(false);
+                    }
+
+                    // Плавная ротация
                     float[] idealAngles = getAnglesTo(target);
                     float idealYaw = idealAngles[0];
                     float idealPitch = idealAngles[1];
@@ -72,30 +84,27 @@ public class SpeedMod implements ModInitializer {
                     float currentPitch = mc.player.getPitch();
                     long now = System.currentTimeMillis();
 
-                    boolean canAttack = canCrit && (now - lastHitTime >= COOLDOWN_MS) && dist <= ATTACK_RANGE;
-                    boolean isNewHit = canAttack && !wasAttacking;
-                    if (isNewHit) {
-                        hitCounter++;
-                        lastHitTime = now;
-                    }
-                    wasAttacking = canAttack;
-
                     float[] newAngles = FunTimeRotation.compute(
                             currentYaw, currentPitch,
                             idealYaw, idealPitch,
-                            canAttack, now,
-                            hitCounter, lastHitTime, isNewHit
+                            now
                     );
 
                     mc.player.setYaw(newAngles[0]);
                     mc.player.setPitch(newAngles[1]);
 
-                    if (canAttack && isNewHit) {
-                        if (mc.player.isSprinting()) {
-                            mc.player.setSprinting(false);
-                        }
+                    // Проверка попадания (raycast)
+                    HitResult hit = mc.player.raycast(ATTACK_RANGE, mc.getTickDelta(), false);
+                    if (!(hit instanceof EntityHitResult) || ((EntityHitResult) hit).getEntity() != target) {
+                        return; // цель не под прицелом — не атакуем
+                    }
+
+                    // Атака с задержкой 600–700 мс
+                    double delay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * random.nextDouble();
+                    if (now - lastHitTime >= (long)(delay * 1000) && dist <= ATTACK_RANGE) {
                         mc.interactionManager.attackEntity(mc.player, target);
                         mc.player.swingHand(mc.player.getActiveHand());
+                        lastHitTime = now;
                     }
                 });
             }
@@ -131,20 +140,11 @@ public class SpeedMod implements ModInitializer {
         return new float[]{yaw, pitch};
     }
 
-    private static boolean isCritPossible() {
-        if (mc.player == null) return false;
-        return !mc.player.isOnGround()
-                && !mc.player.isTouchingWater()
-                && !mc.player.isClimbing()
-                && !mc.player.isRiding();
-    }
-
-    // ============== РОТАЦИЯ (ПЛАВНАЯ) ==============
+    // ============== ПЛАВНАЯ РОТАЦИЯ (40° в секунду) ==============
     public static class FunTimeRotation {
         public static float[] compute(float currentYaw, float currentPitch,
                                       float targetYaw, float targetPitch,
-                                      boolean canAttack, long nowMs,
-                                      int hitCounter, long lastHitTime, boolean isNewHit) {
+                                      long nowMs) {
             float deltaYaw = wrapTo180(targetYaw - currentYaw);
             float deltaPitch = wrapTo180(targetPitch - currentPitch);
             float total = (float) Math.hypot(deltaYaw, deltaPitch);
@@ -153,8 +153,7 @@ public class SpeedMod implements ModInitializer {
                 return new float[]{currentYaw, currentPitch};
             }
 
-            // Медленная скорость поворота: 60° в секунду → ~3° за тик
-            final float MAX_DEGREES_PER_SECOND = 60f;
+            final float MAX_DEGREES_PER_SECOND = 40f;
             float maxStep = MAX_DEGREES_PER_SECOND * 0.05f;
             float maxStepYaw = Math.min(maxStep, (Math.abs(deltaYaw) / total) * maxStep * 2);
             float maxStepPitch = Math.min(maxStep, (Math.abs(deltaPitch) / total) * maxStep * 2);
@@ -165,32 +164,10 @@ public class SpeedMod implements ModInitializer {
             float nextYaw = currentYaw + stepYaw;
             float nextPitch = currentPitch + stepPitch;
 
-            // Всегда применяем сглаживание (плавность)
-            float smoothFactor = 0.25f;
+            float smoothFactor = 0.3f;
             nextYaw = lerp(smoothFactor, currentYaw, nextYaw);
             nextPitch = lerp(smoothFactor, currentPitch, nextPitch);
 
-            // Флик вниз (каждый 86-й хит)
-            if (isNewHit && hitCounter % 86 == 0 && (nowMs - lastHitTime) < 250) {
-                nextPitch = -90f;
-            }
-
-            // Idle тряска (когда не атакуем)
-            if (!canAttack) {
-                long sinceLastHit = nowMs - lastHitTime;
-                if (sinceLastHit >= 535) {
-                    float shakeYaw = (6f + (float) Math.random() * 6f) * (float) Math.sin(nowMs / 60.0);
-                    float shakePitch = (3f + (float) Math.random() * 4f) * (float) Math.cos(nowMs / 60.0);
-                    nextYaw = clamp(currentYaw + shakeYaw, currentYaw - 20f, currentYaw + 20f);
-                    nextPitch = clamp(currentPitch + shakePitch, currentPitch - 20f, currentPitch + 20f);
-                } else {
-                    // Жёстко держим угол (0° доворота)
-                    nextYaw = currentYaw;
-                    nextPitch = currentPitch;
-                }
-            }
-
-            // GCD Snap
             float sens = mc.options.getMouseSensitivity().getValue().floatValue();
             nextYaw = GCDUtil.gcdSnap(nextYaw, sens);
             nextPitch = GCDUtil.gcdSnap(nextPitch, sens);
