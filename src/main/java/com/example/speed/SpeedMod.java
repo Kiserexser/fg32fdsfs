@@ -26,12 +26,12 @@ public class SpeedMod implements ModInitializer {
     private static boolean lastKeyState = false;
     private long lastAttackTime = 0;
 
-    // === НАСТРОЙКИ (оптимальные для обхода) ===
+    // === НАСТРОЙКИ (задержка 0.625–0.630) ===
     private static final double SEARCH_RANGE = 4.5;
     private static final double ATTACK_RANGE = 3.5;
-    private static final double MIN_DELAY = 0.620;
-    private static final double MAX_DELAY = 0.630;
-    private static final float SMOOTH_SPEED = 0.20f;      // не слишком медленно
+    private static final double MIN_DELAY = 0.625;   // 625 мс
+    private static final double MAX_DELAY = 0.630;   // 630 мс
+    private static final float SMOOTH_SPEED = 0.20f;
     private static final boolean SPRINT_RESET = true;
 
     // === Смещение ===
@@ -40,7 +40,7 @@ public class SpeedMod implements ModInitializer {
     private static final long SHIFT_DURATION_MS = 3000;
     private static final long RETURN_DURATION_MS = 2000;
 
-    // === Джиттер (умеренный) ===
+    // === Джиттер ===
     private static final float JITTER_RANGE = 0.12f;
 
     private float targetYaw = 0;
@@ -51,7 +51,7 @@ public class SpeedMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("KillAura (optimized for anti-cheat) loaded. Press R to toggle.");
+        LOGGER.info("KillAura (delay 0.625-0.630s) loaded. Press R to toggle.");
 
         new Thread(() -> {
             while (true) {
@@ -110,10 +110,10 @@ public class SpeedMod implements ModInitializer {
                         HitResult hit = mc.player.raycast(ATTACK_RANGE, 1.0f, false);
                         boolean canHit = hit instanceof EntityHitResult && ((EntityHitResult) hit).getEntity() == target;
 
-                        // ---- Ротация с естественным шумом ----
+                        // ---- Ротация ----
                         Vec3d eyePos = mc.player.getEyePos();
-                        // Случайное смещение цели по вертикали (чтобы не бить всегда в центр)
-                        double heightOffset = (random.nextDouble() - 0.5) * 0.2; // ±0.1 блока
+                        // Случайное смещение цели по Y (±0.1 блока)
+                        double heightOffset = (random.nextDouble() - 0.5) * 0.2;
                         Vec3d targetPos = target.getPos().add(0, target.getHeight() * (0.5 + heightOffset), 0);
 
                         double dx = targetPos.x - eyePos.x;
@@ -124,7 +124,7 @@ public class SpeedMod implements ModInitializer {
                         float yaw = (float) MathHelper.atan2(dz, dx) * (180F / (float) Math.PI) - 90F;
                         float pitch = (float) -MathHelper.atan2(dy, distance) * (180F / (float) Math.PI);
 
-                        // Джиттер (естественное дрожание)
+                        // Джиттер
                         float jitterYaw = (random.nextFloat() - 0.5f) * JITTER_RANGE * 2;
                         float jitterPitch = (random.nextFloat() - 0.5f) * JITTER_RANGE * 2;
 
@@ -144,7 +144,7 @@ public class SpeedMod implements ModInitializer {
                         mc.player.setYaw(newYaw);
                         mc.player.setPitch(newPitch);
 
-                        // ---- Атака ----
+                        // ---- Атака с задержкой 0.625–0.630 ----
                         long now2 = System.currentTimeMillis();
                         double delay = MIN_DELAY + (MAX_DELAY - MIN_DELAY) * random.nextDouble();
 
